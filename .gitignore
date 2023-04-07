@@ -10,3 +10,6 @@ xpot.ps1
 temp.ps1
 test.ps1
 poshlab.ml.yml
+config.yml
+reports/*
+transcript/*

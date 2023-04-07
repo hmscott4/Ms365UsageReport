@@ -99,6 +99,24 @@ Function LogStart {
     LogEnd
     Start-Transcript $logPath -Force | Out-Null
 }
+
+Function GraphService {
+    param (
+        [Parameter(Mandatory = $false)]
+        [ValidateSet("Global","GCC","GCC-High","US-DoD")]
+        [string]$GraphCloud = "Global"
+    )
+
+    Switch($GraphCloud)
+    {
+        "Global"    {$baseURI="https://graph.microsoft.com"}
+        "GCC"       {$baseURI="https://graph.microsoft.com"}
+        "GCC-High"  {$baseURI="https://graph.microsoft.us"}
+        "US-DoD"    {$baseURI="https://dod-graph.microsoft.us"}
+    }
+
+    Return $baseURI
+}
 #EndRegion Functions
 
 While (Get-PSSession -Name ExchangeOnline*) {
@@ -165,6 +183,7 @@ $saveRawData = $options.parameters.saveRawData
 
 # Developer
 $graphApiVersion = $options.developer.graphApiVersion
+$graphURI = GraphService $options.endpoints.graphService
 
 # License
 $reportLicenseAssigned = $options.reports.license
@@ -364,7 +383,7 @@ if ($enabledReport -contains 'Exchange') {
 #EndRegion
 
 #organization details
-$uri = "https://graph.microsoft.com/beta/organization`?`$select=displayname"
+$uri = "$graphURI/$graphApiVersion/organization`?`$select=displayname"
 $organizationName = (Invoke-RestMethod -Method Get -Uri $uri -Headers $headerParams).Value.displayname
 Write-Output "$(Get-Date) : Your organization name is $organizationName"
 
@@ -409,7 +428,7 @@ $html += '</table>'
 if ($reportLicenseAssigned) {
     Write-Output "$(Get-Date) : Processing Assigned License Report"
     Write-Output "$(Get-Date) :      --> Getting Office 365 user count and assigned licenses"
-    $uri = "https://graph.microsoft.com/$graphApiVersion/reports/getOffice365ActiveUserDetail(period='D$($dPeriod)')"
+    $uri = "$graphURI/$graphApiVersion/reports/getOffice365ActiveUserDetail(period='D$($dPeriod)')"
     $raw = (Invoke-RestMethod -Method Get -Uri $uri -Headers $headerParams) | ConvertFrom-Csv
 
     $license = "" | Select-Object TotalUsers, TotalUsersLicensed, TotalUsersUnlicensed, Exchange, Sharepoint, OneDrive, SkypeForBusiness, Yammer, Teams
@@ -438,6 +457,7 @@ if ($reportLicenseAssigned) {
 
     if ($saveRawData) {
         $raw | Export-Csv "$($reportFolder)\raw_Office365ActiveUserDetail.csv" -NoTypeInformation
+        $raw | ConvertTo-Json | Add-Content "$($reportFolder)\raw_Office365ActiveUserDetail.json"
     }
 }
 
@@ -448,7 +468,7 @@ if ($reportLicenseAssigned) {
 if ($reportMs365ActiveUsers) {
     Write-Output "$(Get-Date) : Processing Office 365 Active Users Report"
     Write-Output "$(Get-Date) :      --> Getting Office 365 active user count per service"
-    $uri = "https://graph.microsoft.com/$graphApiVersion/reports/getOffice365ServicesUserCounts(period='D$($dPeriod)')"
+    $uri = "$graphURI/$graphApiVersion/reports/getOffice365ServicesUserCounts(period='D$($dPeriod)')"
     $result = (Invoke-RestMethod -Method Get -Uri $uri -Headers $headerParams) | ConvertFrom-Csv
 
     $raw = "" | Select-Object Office365Active, ExchangeActive, OneDriveActive, SharePointActive, SkypeforBusinessActive, YammerActive, TeamsActive, Office365inActive, ExchangeinActive, OneDriveinActive, SharePointinActive, SkypeforBusinessinActive, YammerinActive, TeamsinActive
@@ -492,7 +512,7 @@ if ($reportMs365ActiveUsers) {
 if ($reportMs365ActivationUsers) {
     Write-Output "$(Get-Date) : Processing Office 365 Activations Users Count Report"
     Write-Output "$(Get-Date) :      --> Getting Office 365 app activations count"
-    $uri = "https://graph.microsoft.com/$graphApiVersion/reports/getOffice365ActivationsUserCounts"
+    $uri = "$graphURI/$graphApiVersion/reports/getOffice365ActivationsUserCounts"
     $result = (Invoke-RestMethod -Method Get -Uri $uri -Headers $headerParams) | ConvertFrom-Csv
 
     $html += '<table id="mainTable"><tr><th class="section"><img src="' + $officeIconFile + '"></th><th class="section">Product Activations</th></tr></table><table id="mainTable">'
@@ -520,7 +540,7 @@ if ($reportMailboxUsageAndProvisioning) {
     Write-Output "$(Get-Date) : Processing Mailbox Usage and Provisioning Report"
     Write-Output "$(Get-Date) :      --> Getting Exchange Online mailbox usage and provisioning details"
 
-    $uri = "https://graph.microsoft.com/$graphApiVersion/reports/getMailboxUsageDetail(period='D$($dPeriod)')"
+    $uri = "$graphURI/$graphApiVersion/reports/getMailboxUsageDetail(period='D$($dPeriod)')"
     $result = (Invoke-RestMethod -Method Get -Uri $uri -Headers $headerParams) | ConvertFrom-Csv
     $mailboxUsageAndProvisioningData = @()
     foreach ($detail in $result) {
@@ -594,7 +614,7 @@ if ($reportMailboxUsageAndProvisioning) {
     # Get quota status
     Write-Output "$(Get-Date) : Processing Mailbox Quota Report"
     Write-Output "$(Get-Date) :      --> Getting Exchange Online mailbox quota status"
-    $uri = "https://graph.microsoft.com/$graphApiVersion/reports/getMailboxUsageQuotaStatusMailboxCounts(period='D$($dPeriod)')"
+    $uri = "$graphURI/$graphApiVersion/reports/getMailboxUsageQuotaStatusMailboxCounts(period='D$($dPeriod)')"
     $raw = ((Invoke-RestMethod -Method Get -Uri $uri -Headers $headerParams) | ConvertFrom-Csv)[0]
     $quota = "" | Select-Object UnderLimit, WarningIssued, SendProhibited, SendReceiveProhibited, Below25Percent
     [int]$quota.UnderLimit = $raw."Under Limit"
@@ -606,7 +626,7 @@ if ($reportMailboxUsageAndProvisioning) {
 
     # EXO Storage Used
     Write-Output "$(Get-Date) :      --> Getting Exchange Online storage usage (tenant)"
-    $uri = "https://graph.microsoft.com/$graphApiVersion/reports/getMailboxUsageStorage(period='D$($dPeriod)')"
+    $uri = "$graphURI/$graphApiVersion/reports/getMailboxUsageStorage(period='D$($dPeriod)')"
     $exoStorage = ((Invoke-RestMethod -Method Get -Uri $uri -Headers $headerParams) | ConvertFrom-Csv)
 
     $html += '<table id="mainTable"><tr><th class="section"><img src="' + $exchangeIconFile + '"></th><th class="section">Mailbox Storage</th></tr></table><table id="mainTable">'
@@ -620,6 +640,7 @@ if ($reportMailboxUsageAndProvisioning) {
 
     if ($saveRawData) {
         $raw | Export-Csv "$($reportFolder)\raw_MailboxUsageQuotaStatusMailboxCounts.csv" -NoTypeInformation
+        $raw | ConvertTo-Json | Add-Content "$($reportFolder)\raw_MailboxUsageQuotaStatusMailboxCounts.json"
     }
 }
 
@@ -627,7 +648,7 @@ if ($reportMailboxUsageAndProvisioning) {
 if ($reportEmailAppUsage) {
     Write-Output "$(Get-Date) : Processing Email App Report"
     Write-Output "$(Get-Date) :      --> Getting Exchange Online email app distribution count"
-    $uri = "https://graph.microsoft.com/$graphApiVersion/reports/getEmailAppUsageAppsUserCounts(period='D$($dPeriod)')"
+    $uri = "$graphURI/$graphApiVersion/reports/getEmailAppUsageAppsUserCounts(period='D$($dPeriod)')"
     $raw = (Invoke-RestMethod -Method Get -Uri $uri -Headers $headerParams) | ConvertFrom-Csv
 
     $html += '<table id="mainTable"><tr><th class="section"><img src="' + $exchangeIconFile + '"></th><th class="section">Email Apps Usage</th></tr></table><table id="mainTable">'
@@ -654,7 +675,7 @@ if ($reportOffice365GroupsProvisioning) {
     # Get all current Microsoft 365 Groups only
     Write-Output "$(Get-Date) :      --> Getting all Office 365 groups"
     $liveGroups = @()
-    $uri = "https://graph.microsoft.com/$graphApiVersion/groups`?`$filter=groupTypes/any(c:c+eq+'Unified')`&`$select=mailNickname,deletedDateTime,createdDateTime"
+    $uri = "$graphURI/$graphApiVersion/groups`?`$filter=groupTypes/any(c:c+eq+'Unified')`&`$select=mailNickname,deletedDateTime,createdDateTime"
     $raw = (Invoke-RestMethod -Method Get -Uri $uri -Headers $headerParams)
     if ($raw.value) {
         $liveGroups += $raw.value
@@ -666,7 +687,7 @@ if ($reportOffice365GroupsProvisioning) {
     Write-Output "$(Get-Date) :      --> Getting list of deleted Office 365 groups"
     # Get all deleted Microsoft 365 Groups only
     $deletedGroups = @()
-    $uri = "https://graph.microsoft.com/$graphApiVersion/directory/deletedItems/microsoft.graph.group`?`$filter=groupTypes/any(c:c+eq+'Unified')`&`$select=mailNickname,deletedDateTime,createdDateTime"
+    $uri = "$graphURI/$graphApiVersion/directory/deletedItems/microsoft.graph.group`?`$filter=groupTypes/any(c:c+eq+'Unified')`&`$select=mailNickname,deletedDateTime,createdDateTime"
     $raw = (Invoke-RestMethod -Method Get -Uri $uri -Headers $headerParams)
     if ($raw.value) {
         $deletedGroups += $raw.value
@@ -845,7 +866,7 @@ if ($reportSPO) {
 
     Write-Output "$(Get-Date) : Processing SharePoint Report"
     Write-Output "$(Get-Date) :      --> Getting SharePoint Sites Usage"
-    $uri = "https://graph.microsoft.com/$graphApiVersion/reports/getSharePointSiteUsageDetail(period='D$($dPeriod)')"
+    $uri = "$graphURI/$graphApiVersion/reports/getSharePointSiteUsageDetail(period='D$($dPeriod)')"
     $raw = (Invoke-RestMethod -Method Get -Uri $uri -Headers $headerParams) | ConvertFrom-Csv
     $raw | Add-Member -MemberType ScriptProperty -Name LastActivityDate -Value { [datetime]$this."Last Activity Date" }
     $spoSites = "" | Select-Object Total, Active, Inactive
@@ -854,7 +875,7 @@ if ($reportSPO) {
     $spoSites.Active = ($raw | Where-Object { $_.LastActivityDate -ge ($today.AddDays(-$dPeriod)) -and $_.'Is Deleted' -eq $false }).Count
 
     Write-Output "$(Get-Date) :      --> Getting SharePoint Storage Usage"
-    $uri = "https://graph.microsoft.com/$graphApiVersion/reports/getSharePointSiteUsageStorage(period='D$($dPeriod)')"
+    $uri = "$graphURI/$graphApiVersion/reports/getSharePointSiteUsageStorage(period='D$($dPeriod)')"
     $spoStorage = (Invoke-RestMethod -Method Get -Uri $uri -Headers $headerParams) | ConvertFrom-Csv
     $spoStorage | Add-Member -MemberType ScriptProperty -Name ReportDate -Value { [datetime]$this."Report Date" }
     $spoStorage | Add-Member -MemberType ScriptProperty -Name Inactive -Value { [int]$this.Total - [int]$this.Active }
@@ -880,7 +901,7 @@ if ($reportSPO) {
 if ($reportOneDrive) {
     Write-Output "$(Get-Date) : Processing OneDrive Report"
     Write-Output "$(Get-Date) :      --> Getting OneDrive Usage"
-    $uri = "https://graph.microsoft.com/$graphApiVersion/reports/getOneDriveUsageAccountDetail(period='D$($dPeriod)')"
+    $uri = "$graphURI/$graphApiVersion/reports/getOneDriveUsageAccountDetail(period='D$($dPeriod)')"
     $getOneDriveUsageAccountDetail = (Invoke-RestMethod -Method Get -Uri $uri -Headers $headerParams) | ConvertFrom-Csv
     $getOneDriveUsageAccountDetail | Add-Member -MemberType ScriptProperty -Name LastActivityDate -Value { [datetime]$this."Last Activity Date" }
     $oneDriveSites = "" | Select-Object Total, Active, Inactive
@@ -889,7 +910,7 @@ if ($reportOneDrive) {
     $oneDriveSites.Active = ($getOneDriveUsageAccountDetail | Where-Object { $_.LastActivityDate -ge ($today.AddDays(-$dPeriod)) }).Count
 
     Write-Output "$(Get-Date) :      --> Getting OneDrive Storage Usage"
-    $uri = "https://graph.microsoft.com/$graphApiVersion/reports/getOneDriveUsageStorage(period='D$($dPeriod)')"
+    $uri = "$graphURI/$graphApiVersion/reports/getOneDriveUsageStorage(period='D$($dPeriod)')"
     $oneDriveStorage = (Invoke-RestMethod -Method Get -Uri $uri -Headers $headerParams) | ConvertFrom-Csv
     $oneDriveStorage | Add-Member -MemberType ScriptProperty -Name ReportDate -Value { [datetime]$this."Report Date" }
     $oneDriveStorage | Add-Member -MemberType ScriptProperty -Name Inactive -Value { [int]$this.Total - [int]$this.Active }
@@ -918,7 +939,7 @@ if ($reportSkypeForBusiness) {
     # Total minutes (audio/video)
     # Organized minutes
     Write-Output "$(Get-Date) :      --> Getting SfB organized minutes"
-    $uri1 = "https://graph.microsoft.com/$graphApiVersion/reports/getSkypeForBusinessOrganizerActivityMinuteCounts(period='D$($dPeriod)')"
+    $uri1 = "$graphURI/$graphApiVersion/reports/getSkypeForBusinessOrganizerActivityMinuteCounts(period='D$($dPeriod)')"
     $sfb1 = (Invoke-RestMethod -Method Get -Uri $uri1 -Headers $headerParams) | ConvertFrom-Csv
 
     if ($saveRawData) {
@@ -927,7 +948,7 @@ if ($reportSkypeForBusiness) {
 
     # Participant minutes
     Write-Output "$(Get-Date) :      --> Getting SfB participant minutes"
-    $uri2 = "https://graph.microsoft.com/$graphApiVersion/reports/getSkypeForBusinessParticipantActivityMinuteCounts(period='D$($dPeriod)')"
+    $uri2 = "$graphURI/$graphApiVersion/reports/getSkypeForBusinessParticipantActivityMinuteCounts(period='D$($dPeriod)')"
     $sfb2 = (Invoke-RestMethod -Method Get -Uri $uri2 -Headers $headerParams) | ConvertFrom-Csv
 
     if ($saveRawData) {
@@ -936,7 +957,7 @@ if ($reportSkypeForBusiness) {
 
     # Peer to peer minutes
     Write-Output "$(Get-Date) :      --> Getting SfB p2p minutes"
-    $uri3 = "https://graph.microsoft.com/$graphApiVersion/reports/getSkypeForBusinessPeerToPeerActivityMinuteCounts(period='D$($dPeriod)')"
+    $uri3 = "$graphURI/$graphApiVersion/reports/getSkypeForBusinessPeerToPeerActivityMinuteCounts(period='D$($dPeriod)')"
     $sfb3 = (Invoke-RestMethod -Method Get -Uri $uri3 -Headers $headerParams) | ConvertFrom-Csv
 
     if ($saveRawData) {
@@ -953,7 +974,7 @@ if ($reportSkypeForBusiness) {
     # Active user, conference and p2p sessions
     # Active User Count
     Write-Output "$(Get-Date) :      --> Getting SfB active user count"
-    $uri = "https://graph.microsoft.com/$graphApiVersion/reports/getSkypeForBusinessActivityUserDetail(period='D$($dPeriod)')"
+    $uri = "$graphURI/$graphApiVersion/reports/getSkypeForBusinessActivityUserDetail(period='D$($dPeriod)')"
     $activeUserCount = (Invoke-RestMethod -Method Get -Uri $uri -Headers $headerParams) | ConvertFrom-Csv
     $activeUserCount | Add-Member -MemberType ScriptProperty -Name LastActivityDate -Value { [datetime]$this."Last Activity Date" }
     if ($saveRawData) {
@@ -963,7 +984,7 @@ if ($reportSkypeForBusiness) {
 
     # Conference count
     Write-Output "$(Get-Date) :      --> Getting SfB conference count"
-    $uri = "https://graph.microsoft.com/$graphApiVersion/reports/getSkypeForBusinessOrganizerActivityCounts(period='D$($dPeriod)')"
+    $uri = "$graphURI/$graphApiVersion/reports/getSkypeForBusinessOrganizerActivityCounts(period='D$($dPeriod)')"
     $conferenceCount = (Invoke-RestMethod -Method Get -Uri $uri -Headers $headerParams) | ConvertFrom-Csv
 
     if ($saveRawData) {
@@ -975,7 +996,7 @@ if ($reportSkypeForBusiness) {
 
     # Peer to peer count
     Write-Output "$(Get-Date) :      --> Getting SfB p2p activity count"
-    $uri = "https://graph.microsoft.com/$graphApiVersion/reports/getSkypeForBusinessPeerToPeerActivityCounts(period='D$($dPeriod)')"
+    $uri = "$graphURI/$graphApiVersion/reports/getSkypeForBusinessPeerToPeerActivityCounts(period='D$($dPeriod)')"
     $peerTOpeerCount = (Invoke-RestMethod -Method Get -Uri $uri -Headers $headerParams) | ConvertFrom-Csv
     $peerTOpeerCount | Add-Member -MemberType ScriptProperty -Name ReportDate -Value { [datetime]$this."Report Date" }
     $peerTOpeerCount = $peerTOpeerCount | Where-Object { $_.ReportDate -ge $startDate -and $_.ReportDate -le $endDate }
@@ -999,7 +1020,7 @@ if ($reportSkypeForBusiness) {
 
     # Device usage distribution
     Write-Output "$(Get-Date) :      --> Getting SfB device usage distribution count"
-    $uri = "https://graph.microsoft.com/$graphApiVersion/reports/getSkypeForBusinessDeviceUsageDistributionUserCounts(period='D$($dPeriod)')"
+    $uri = "$graphURI/$graphApiVersion/reports/getSkypeForBusinessDeviceUsageDistributionUserCounts(period='D$($dPeriod)')"
     $sfbDevices = (Invoke-RestMethod -Method Get -Uri $uri -Headers $headerParams) | ConvertFrom-Csv
     if ($saveRawData) {
         $sfbDevices | Export-Csv "$($reportFolder)\raw_SkypeForBusinessDeviceUsageDistributionUserCounts.csv" -NoTypeInformation
@@ -1019,14 +1040,14 @@ if ($reportSkypeForBusiness) {
 if ($reportTeams) {
     Write-Output "$(Get-Date) : Processing MS Teams Report"
     Write-Output "$(Get-Date) :      --> Getting Teams active user count"
-    $uri = "https://graph.microsoft.com/$graphApiVersion/reports/getTeamsUserActivityUserDetail(period='D$($dPeriod)')"
+    $uri = "$graphURI/$graphApiVersion/reports/getTeamsUserActivityUserDetail(period='D$($dPeriod)')"
     $TeamsUserActivityUserDetail = (Invoke-RestMethod -Method Get -Uri $uri -Headers $headerParams) | ConvertFrom-Csv
     $TeamsUserActivityUserDetail | Add-Member -MemberType ScriptProperty -Name LastActivityDate -Value { [datetime]$this.'Last Activity Date' }
     Write-Output "$(Get-Date) :      --> Getting Teams user activity count"
-    $uri = "https://graph.microsoft.com/$graphApiVersion/reports/getTeamsUserActivityCounts(period='D$($dPeriod)')"
+    $uri = "$graphURI/$graphApiVersion/reports/getTeamsUserActivityCounts(period='D$($dPeriod)')"
     $TeamsUserActivityCounts = (Invoke-RestMethod -Method Get -Uri $uri -Headers $headerParams) | ConvertFrom-Csv
     Write-Output "$(Get-Date) :      --> Getting Teams device usage distribution count"
-    $uri = "https://graph.microsoft.com/$graphApiVersion/reports/getTeamsDeviceUsageDistributionUserCounts(period='D$($dPeriod)')"
+    $uri = "$graphURI/$graphApiVersion/reports/getTeamsDeviceUsageDistributionUserCounts(period='D$($dPeriod)')"
     $TeamsDeviceUsageDistributionUserCounts = (Invoke-RestMethod -Method Get -Uri $uri -Headers $headerParams) | ConvertFrom-Csv
 
     # Teams Users
@@ -1058,8 +1079,11 @@ if ($reportTeams) {
 
     if ($saveRawData) {
         $TeamsUserActivityUserDetail | Export-Csv "$($reportFolder)\raw_TeamsUserActivityUserDetail.csv" -NoTypeInformation
+        $TeamsUserActivityUserDetail | ConvertTo-Json | Add-Content "$($reportFolder)\raw_TeamsUserActivityUserDetail.json" 
         $TeamsUserActivityCounts | Export-Csv "$($reportFolder)\raw_TeamsUserActivityCounts.csv" -NoTypeInformation
+        $TeamsUserActivityCounts | ConvertTo-Json | Add-Content "$($reportFolder)\raw_TeamsUserActivityCounts.json"
         $TeamsUserActivityCounts | Export-Csv "$($reportFolder)\raw_TeamsDeviceUsageDistributionUserCounts.csv" -NoTypeInformation
+        $TeamsUserActivityCounts | ConvertTo-Json | Add-Content "$($reportFolder)\raw_TeamsDeviceUsageDistributionUserCounts.json"
     }
 }
 
@@ -1070,6 +1094,7 @@ $html += '<tr><th>Enabled Reports</th><td>' + ($enabledReport -join ', ') + '</t
 $html += '<tr><th>Source</th><td>' + $env:COMPUTERNAME + '</td></tr>'
 $html += '<tr><th>Script File</th><td>' + $MyInvocation.MyCommand.Definition + '</td></tr>'
 $html += '<tr><th>Config File</th><td>' + $Config + '</td></tr>'
+$html += '<tr><th>Cloud Service</th><td>' + $options.endpoints.graphService + '</td></tr>'
 $html += '<tr><td colspan="2"><a href="' + ($scriptInfo.PROJECTURI) + '">Ms365UsageReport v.' + ($scriptInfo.Version) + '</td></tr>'
 $html += '</table>'
 $html += '</body></html>'
@@ -1244,8 +1269,8 @@ if ($sendEmail) {
         }
 
         $mailBody = $mailBody | ConvertTo-Json -Depth 4
-        $ServicePoint = [System.Net.ServicePointManager]::FindServicePoint('https://graph.microsoft.com')
-        $mailApiUri = "https://graph.microsoft.com/$graphApiVersion/users/$($fromAddress)/sendmail"
+        $ServicePoint = [System.Net.ServicePointManager]::FindServicePoint("$graphURI")
+        $mailApiUri = "$graphURI/$graphApiVersion/users/$($fromAddress)/sendmail"
         Invoke-RestMethod -Method Post -Uri $mailApiUri -Body $mailbody -Headers $headerParams -ContentType application/json -ErrorAction STOP
         $null = $ServicePoint.CloseConnectionGroup("")
         Write-Output "$(Get-Date) : [$([Char]8730)] Sending Complete"
